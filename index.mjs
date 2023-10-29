@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import OpenAI from 'openai';
+import { createServer } from 'node:http'
+import { createSchema, createYoga } from 'graphql-yoga';
 
 const openai = new OpenAI();
 
@@ -58,18 +60,56 @@ async function updateConversation(
 
 // Get all conversations
 function getAllConversations() {
-  return conversations;
+  return Object.keys(conversations).map(conversationId => ({
+    conversationId,
+    messages: conversations[conversationId].messages,
+  }));
 }
 
-async function main() {
-  const result = await createConversation('Say this is a test');
-  console.log(result);
+const schema = createSchema({
+  typeDefs: /* GraphQL */ `
+    type Conversation {
+      conversationId: String!
+      messages: [Message!]!
+    }
 
-  console.log(await updateConversation(result.conversationId, 'Say this is an updated test'));
+    type Message {
+      role: String!
+      content: String!
+    }
 
-  console.log(await createConversation('Say this is an updated test'));
+    type CreateOrUpdateConversationResponse {
+      response: String!
+      conversationId: String!
+    }
 
-  console.log(getAllConversations());
-}
+    type Query {
+      getAllConversations: [Conversation!]!
+    }
 
-main();
+    type Mutation {
+      createConversation(query: String!): CreateOrUpdateConversationResponse!
+      updateConversation(conversationId: String!, query: String!): CreateOrUpdateConversationResponse!
+    }
+  `,
+  resolvers: {
+    Query: {
+      getAllConversations: () => getAllConversations(),
+    },
+    Mutation: {
+      createConversation: (_, { query }) => createConversation(query),
+      updateConversation: (_, { conversationId, query }) => updateConversation(conversationId, query),
+    },
+  }
+})
+
+// Create a Yoga instance with a GraphQL schema.
+const yoga = createYoga({ schema })
+
+// Pass it into a server to hook into request handlers.
+const server = createServer(yoga)
+
+// Start the server and you're done!
+server.listen(4000, () => {
+  console.info('Server is running on http://localhost:4000/graphql')
+})
